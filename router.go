@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"net/http"
 	"net/url"
 	"path"
 	"strings"
@@ -159,7 +160,7 @@ func (r *Router) Load() (err error) {
 
 // FindDomain returns domain routes configuration based on http request
 // otherwise nil.
-func (r *Router) FindDomain(req *ahttp.Request) *Domain {
+func (r *Router) FindDomain(req *http.Request) *Domain {
 	if domain, found := r.Domains[strings.ToLower(req.Host)]; found {
 		return domain
 	}
@@ -326,7 +327,7 @@ func (r *Router) processRoutesConfig() (err error) {
 // Lookup finds a route information, path parameters, redirect trailing slash
 // indicator for given `ahttp.Request` by domain and request URI
 // otherwise returns nil and false.
-func (d *Domain) Lookup(req *ahttp.Request) (*Route, *PathParams, bool) {
+func (d *Domain) Lookup(req *http.Request) (*Route, *PathParams, bool) {
 	// HTTP method override support
 	overrideMethod := req.Header.Get(ahttp.HeaderXHTTPMethodOverride)
 	if !ess.IsStrEmpty(overrideMethod) && req.Method == ahttp.MethodPost {
@@ -339,7 +340,7 @@ func (d *Domain) Lookup(req *ahttp.Request) (*Route, *PathParams, bool) {
 		return nil, nil, false
 	}
 
-	routeName, pathParams, rts, err := tree.find(req.Path)
+	routeName, pathParams, rts, err := tree.find(req.URL.Path)
 	if routeName != nil && err == nil {
 		return d.routes[routeName.(string)], &pathParams, rts
 	} else if rts { // possible Redirect Trailing Slash
