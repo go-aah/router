@@ -24,7 +24,7 @@ import (
 )
 
 // Version no. of aah framework router library
-const Version = "0.4.1"
+const Version = "0.5.1"
 
 var (
 	// HTTPMethodActionMap is default Controller Action name for corresponding
