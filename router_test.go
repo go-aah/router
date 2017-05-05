@@ -133,7 +133,7 @@ func TestRouterErrorHostLoadConfiguration(t *testing.T) {
 	router, err := createRouter("routes-no-hostname.conf")
 	assert.NotNilf(t, err, "expected error loading '%v'", "routes-no-hostname.conf")
 	assert.NotNil(t, router)
-	assert.Equal(t, "'localhost_8080.host' key is missing", err.Error())
+	assert.Equal(t, "'localhost.host' key is missing", err.Error())
 }
 
 func TestRouterErrorPathLoadConfiguration(t *testing.T) {
@@ -382,7 +382,7 @@ func TestRouterNamespaceConfig(t *testing.T) {
 	err := router.Load()
 	assert.FailNowOnError(t, err, "")
 
-	routes := router.Domains["localhost"].routes
+	routes := router.Domains["localhost:8080"].routes
 	assert.NotNil(t, routes)
 	assert.Equal(t, 4, len(routes))
 	assert.Equal(t, "/v1/users", routes["create_user"].Path)
@@ -394,7 +394,7 @@ func TestRouterNamespaceConfig(t *testing.T) {
 func createRouter(filename string) (*Router, error) {
 	wd, _ := os.Getwd()
 	appCfg, _ := config.ParseString(`routes {
-			localhost_8080 {
+			localhost {
 				host = "localhost"
 				port = "8080"
 			}
