@@ -5,6 +5,7 @@
 package router
 
 import (
+	"errors"
 	"net/http"
 	"net/url"
 	"os"
@@ -423,4 +424,232 @@ func createHTTPRequest(host, path string) *ahttp.Request {
 	}
 
 	return req
+}
+
+func TestRouterWalk(t *testing.T) {
+	domain := &Domain{
+		Host:   "aahframework.org",
+		trees:  make(map[string]*node),
+		routes: make(map[string]*Route),
+	}
+
+	route1 := &Route{
+		Name:       "route1",
+		Path:       "/info/:user/project/:project",
+		Method:     "GET",
+		Controller: "Info",
+		Action:     "ShowProject",
+	}
+
+	domain.AddRoute(route1)
+
+	route2 := &Route{
+		Name:       "index",
+		Path:       "/",
+		Method:     "GET",
+		Controller: "App",
+		Action:     "Index",
+	}
+	domain.AddRoute(route2)
+
+	router := &Router{
+		Domains: map[string]*Domain{domain.Name: domain},
+	}
+
+	var i int
+
+	err := router.Walk(func(rou *Router, d *Domain, r *Route) error {
+		if r != route1 && r != route2 {
+			assert.Fail(t, "Unexpected route given to the Walker Func..", r)
+		}
+
+		i++
+		return nil
+	})
+
+	assert.Nil(t, err)
+	assert.Equal(t, len(domain.routes), i)
+}
+
+func TestRouterWalk_skipWalk(t *testing.T) {
+	domain := &Domain{
+		Host:   "aahframework.org",
+		trees:  make(map[string]*node),
+		routes: make(map[string]*Route),
+	}
+
+	route1 := &Route{
+		Name:       "route1",
+		Path:       "/info/:user/project/:project",
+		Method:     "GET",
+		Controller: "Info",
+		Action:     "ShowProject",
+	}
+
+	domain.AddRoute(route1)
+
+	route2 := &Route{
+		Name:       "index",
+		Path:       "/",
+		Method:     "GET",
+		Controller: "App",
+		Action:     "Index",
+	}
+	domain.AddRoute(route2)
+
+	router := &Router{
+		Domains: map[string]*Domain{domain.Name: domain},
+	}
+
+	var i int
+
+	err := router.Walk(func(rou *Router, d *Domain, r *Route) error {
+		if i == 1 { //return on second iteration, so we should get only one route
+			return ErrSkipWalk
+		}
+
+		i++
+		return nil
+	})
+
+	assert.Nil(t, err)
+	assert.Equal(t, 1, i)
+}
+
+func TestRouterWalk_err(t *testing.T) {
+	domain := &Domain{
+		Host:   "aahframework.org",
+		trees:  make(map[string]*node),
+		routes: make(map[string]*Route),
+	}
+
+	route1 := &Route{
+		Name:       "route1",
+		Path:       "/info/:user/project/:project",
+		Method:     "GET",
+		Controller: "Info",
+		Action:     "ShowProject",
+	}
+
+	domain.AddRoute(route1)
+
+	route2 := &Route{
+		Name:       "index",
+		Path:       "/",
+		Method:     "GET",
+		Controller: "App",
+		Action:     "Index",
+	}
+	domain.AddRoute(route2)
+
+	router := &Router{
+		Domains: map[string]*Domain{domain.Name: domain},
+	}
+
+	err := router.Walk(func(rou *Router, d *Domain, r *Route) error {
+		return errors.New("We don't want to walk this router")
+	})
+
+	assert.NotNil(t, err)
+}
+
+func TestRouterWalk_multpleDomains(t *testing.T) {
+	router, err := createRouter("routes.conf")
+
+	domain := &Domain{
+		Host:   "aahframework.org",
+		trees:  make(map[string]*node),
+		routes: make(map[string]*Route),
+	}
+
+	route1 := &Route{
+		Name:       "route1",
+		Path:       "/info/:user/project/:project",
+		Method:     "GET",
+		Controller: "Info",
+		Action:     "ShowProject",
+	}
+
+	route2 := &Route{
+		Name:       "index",
+		Path:       "/",
+		Method:     "GET",
+		Controller: "App",
+		Action:     "Index",
+	}
+	domain.AddRoute(route1)
+	domain.AddRoute(route2)
+
+	router.Domains[domain.Name] = domain
+
+	assert.FailNowOnError(t, err, "")
+
+	domains := make(map[string]struct{}, 4)
+
+	var i int
+
+	err = router.Walk(func(rou *Router, d *Domain,
+		r *Route) error {
+		if _, ok := domains[d.Name]; !ok {
+			domains[d.Name] = struct{}{}
+		}
+		i++
+		return nil
+	})
+
+	assert.Nil(t, err)
+	//Make sure we have exactly 2 domains
+	assert.Equal(t, 2, len(domains))
+	//Verify the route count
+	assert.Equal(t, 16, i)
+}
+
+func TestRouterWalk_multpleDomains_skipErrWalk(t *testing.T) {
+	router, err := createRouter("routes.conf")
+
+	domain := &Domain{
+		Host:   "aahframework.org",
+		trees:  make(map[string]*node),
+		routes: make(map[string]*Route),
+	}
+
+	route1 := &Route{
+		Name:       "route1",
+		Path:       "/info/:user/project/:project",
+		Method:     "GET",
+		Controller: "Info",
+		Action:     "ShowProject",
+	}
+
+	route2 := &Route{
+		Name:       "index",
+		Path:       "/",
+		Method:     "GET",
+		Controller: "App",
+		Action:     "Index",
+	}
+	domain.AddRoute(route1)
+	domain.AddRoute(route2)
+
+	router.Domains[domain.Name] = domain
+
+	assert.FailNowOnError(t, err, "")
+
+	var i int
+
+	err = router.Walk(func(rou *Router, d *Domain,
+		r *Route) error {
+		if d.Host == "localhost" {
+			return ErrSkipWalk
+		}
+		i++
+		return nil
+	})
+
+	assert.Nil(t, err)
+	//Verify the route count
+	//We should get only 2 here.. THat is the routes for
+	//the custom domain we registered.
+	//Remember we are gettng rid of the domains gotten from the config file
+	assert.Equal(t, 2, i)
 }

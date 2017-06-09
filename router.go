@@ -43,6 +43,12 @@ var (
 	// ErrNoDomainRoutesConfigFound returned when routes config file not found or doesn't
 	// have `domains { ... }` config information.
 	ErrNoDomainRoutesConfigFound = errors.New("router: no domain routes config found")
+
+	//ErrSkipWalk is an error type that denotes all routes under
+	//the current domain be skipped.
+	//If this error type is encountered, the next routes would be for
+	//the next available/registered domain
+	ErrSkipWalk = errors.New(`walker func: ths route teration was skipped`)
 )
 
 type (
@@ -188,6 +194,33 @@ func (r *Router) RegisteredActions() map[string]map[string]uint8 {
 	}
 
 	return methods
+}
+
+//Walker is a function type that is called for each iteration by Walk
+//Router is the current router performing the walk.
+//Domain is the domain registered for the current route iteration
+//Route is the currently iterated route
+type Walker func(*Router, *Domain, *Route) error
+
+//Walk walks the router and the domains associated
+func (r *Router) Walk(fn Walker) error {
+
+	for _, domain := range r.Domains {
+		for _, route := range domain.routes {
+			err := fn(r, domain, route)
+
+			if err == ErrSkipWalk {
+				break
+			}
+
+			if err != nil {
+				return err
+			}
+
+		}
+	}
+
+	return nil
 }
 
 func (r *Router) processRoutesConfig() (err error) {
