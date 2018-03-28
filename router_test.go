@@ -425,6 +425,94 @@ func TestRouterNamespaceConfig(t *testing.T) {
 	assert.Equal(t, "'list_users.action' key is missing, it seems to be multiple HTTP methods", err.Error())
 }
 
+func TestRouterNamespaceSimplifiedConfig(t *testing.T) {
+	_ = log.SetLevel("TRACE")
+	wd, _ := os.Getwd()
+	appCfg, _ := config.ParseString("")
+	router := New(filepath.Join(wd, "testdata", "routes-simplified.conf"), appCfg)
+	err := router.Load()
+	assert.FailNowOnError(t, err, "")
+
+	routes := router.Domains["localhost:8080"].routes
+	assert.NotNil(t, routes)
+	assert.Equal(t, 2, len(routes))
+
+	// show_basket
+	assert.Equal(t, "/baskets", routes["show_basket"].Path)
+	assert.Equal(t, "GET", routes["show_basket"].Method)
+	assert.Equal(t, "anonymous", routes["show_basket"].Auth)
+	assert.Equal(t, "BasketController", routes["show_basket"].Controller)
+
+	// create_basket
+	assert.Equal(t, "/baskets", routes["create_basket"].Path)
+	assert.Equal(t, "POST", routes["create_basket"].Method)
+	assert.Equal(t, "form_auth", routes["create_basket"].Auth)
+	assert.Equal(t, "BasketController", routes["create_basket"].Controller)
+}
+
+func TestRouterNamespaceSimplified2Config(t *testing.T) {
+	_ = log.SetLevel("TRACE")
+	wd, _ := os.Getwd()
+	appCfg, _ := config.ParseString("")
+	router := New(filepath.Join(wd, "testdata", "routes-simplified-2.conf"), appCfg)
+	err := router.Load()
+	assert.FailNowOnError(t, err, "")
+
+	routes := router.Domains["localhost:8080"].routes
+	assert.NotNil(t, routes)
+	assert.Equal(t, 7, len(routes))
+
+	for _, v := range strings.Fields("list_users delete_user get_user get_user_settings update_user update_user_settings create_user") {
+		if _, found := routes[v]; !found {
+			assert.True(t, found)
+		}
+	}
+
+	userSettingsRoute := routes["get_user_settings"]
+	assert.Equal(t, 1, len(userSettingsRoute.validationRules))
+	rule, found := userSettingsRoute.ValidationRule("id")
+	assert.True(t, found)
+	assert.Equal(t, "gt=1,lt=10", rule)
+
+	// Error
+	router = New(filepath.Join(wd, "testdata", "routes-simplified-2-error.conf"), appCfg)
+	err = router.Load()
+	assert.NotNil(t, err)
+	assert.Equal(t, "'routes.path' has invalid validation rule '/v1/users/:id  gt=1,lt=10]'", err.Error())
+}
+
+func TestRouterStaticSectionBaseDirForFilePaths(t *testing.T) {
+	_ = log.SetLevel("TRACE")
+	wd, _ := os.Getwd()
+	appCfg, _ := config.ParseString("")
+	router := New(filepath.Join(wd, "testdata", "routes-static.conf"), appCfg)
+	err := router.Load()
+	assert.FailNowOnError(t, err, "")
+
+	// Assertion
+	routes := router.Domains["localhost:8080"].routes
+	assert.NotNil(t, routes)
+	assert.Equal(t, 4, len(routes))
+
+	faviconRoute := routes["favicon"]
+	assert.False(t, faviconRoute.IsDir())
+	assert.True(t, faviconRoute.IsFile())
+	assert.Equal(t, "assets", faviconRoute.Dir)
+	assert.Equal(t, "img/favicon.png", faviconRoute.File)
+
+	robotTxtRoute := routes["robots_txt"]
+	assert.False(t, robotTxtRoute.IsDir())
+	assert.True(t, robotTxtRoute.IsFile())
+	assert.Equal(t, "static", robotTxtRoute.Dir)
+	assert.Equal(t, "robots.txt", robotTxtRoute.File)
+
+	// ERROR missing values
+	router = New(filepath.Join(wd, "testdata", "routes-static-base-dir-missing.conf"), appCfg)
+	err = router.Load()
+	assert.NotNil(t, err)
+	assert.Equal(t, "'static.favicon.base_dir' value is missing", err.Error())
+}
+
 func createRouter(filename string) (*Router, error) {
 	_ = log.SetLevel("TRACE")
 	wd, _ := os.Getwd()

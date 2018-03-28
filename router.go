@@ -64,6 +64,8 @@ type (
 		RedirectTrailingSlash bool
 		AutoOptions           bool
 		DefaultAuth           string
+		CORS                  *CORS
+		CORSEnabled           bool
 		trees                 map[string]*node
 		routes                map[string]*Route
 	}
@@ -79,12 +81,15 @@ type (
 		Auth            string
 		MaxBodySize     int64
 		IsAntiCSRFCheck bool
+		CORS            *CORS
 
 		// static route fields in-addition to above
 		IsStatic bool
 		Dir      string
 		File     string
 		ListDir  bool
+
+		validationRules map[string]string
 	}
 
 	// PathParam is single URL path parameter (not a query string values)
@@ -97,9 +102,12 @@ type (
 	PathParams []PathParam
 
 	parentRouteInfo struct {
-		ParentName string
-		PrefixPath string
-		Auth       string
+		ParentName  string
+		PrefixPath  string
+		Controller  string
+		Auth        string
+		CORS        *CORS
+		CORSEnabled bool
 	}
 )
 
@@ -260,8 +268,15 @@ func (r *Router) processRoutesConfig() (err error) {
 			RedirectTrailingSlash: domainCfg.BoolDefault("redirect_trailing_slash", true),
 			AutoOptions:           domainCfg.BoolDefault("auto_options", true),
 			DefaultAuth:           domainCfg.StringDefault("default_auth", ""),
+			CORSEnabled:           domainCfg.BoolDefault("cors.enable", false),
 			trees:                 make(map[string]*node),
 			routes:                make(map[string]*Route),
+		}
+
+		// Domain Level CORS configuration
+		if domain.CORSEnabled {
+			baseCORSCfg, _ := domainCfg.GetSubConfig("cors")
+			domain.CORS = processBaseCORSSection(baseCORSCfg)
 		}
 
 		// Not Found route support is removed in aah v0.8 release,
@@ -283,13 +298,28 @@ func (r *Router) processRoutesConfig() (err error) {
 		log.Debugf("Domain: %s, routes found: %d", key, len(domain.routes))
 		if log.IsLevelTrace() {
 			// don't spend time here, process only if log level is trace
+			// Static Files routes
+			log.Trace("Static Files Routes")
 			for _, dr := range domain.routes {
+				if dr.IsStatic {
+					log.Tracef("Route Name: %v, Path: %v, IsDir: %v, Dir: %v, ListDir: %v, IsFile: %v, File: %v",
+						dr.Name, dr.Path, dr.IsDir(), dr.Dir, dr.ListDir, dr.IsFile(), dr.File)
+				}
+			}
+
+			// Application routes
+			log.Trace("Application Routes")
+			for _, dr := range domain.routes {
+				if dr.IsStatic {
+					continue
+				}
 				parentInfo := ""
 				if !ess.IsStrEmpty(dr.ParentName) {
 					parentInfo = fmt.Sprintf("(parent: %s)", dr.ParentName)
 				}
-				log.Tracef("Route Name: %v %v, Path: %v, Method: %v, Controller: %v, Action: %v, Auth: %v, MaxBodySize: %v",
-					dr.Name, parentInfo, dr.Path, dr.Method, dr.Controller, dr.Action, dr.Auth, dr.MaxBodySize)
+				log.Tracef("Route Name: %v %v, Path: %v, Method: %v, Controller: %v, Action: %v, Auth: %v, MaxBodySize: %v\nCORS: [%v]\nValidation Rules:%v\n",
+					dr.Name, parentInfo, dr.Path, dr.Method, dr.Controller, dr.Action, dr.Auth, dr.MaxBodySize,
+					dr.CORS, dr.validationRules)
 			}
 		}
 
@@ -331,7 +361,11 @@ func (r *Router) processRoutes(domain *Domain, domainCfg *config.Config) error {
 		return nil
 	}
 
-	routes, err := parseRoutesSection(routesCfg, &parentRouteInfo{Auth: domain.DefaultAuth})
+	routes, err := parseRoutesSection(routesCfg, &parentRouteInfo{
+		Auth:        domain.DefaultAuth,
+		CORS:        domain.CORS,
+		CORSEnabled: domainCfg.BoolDefault("cors.enable", false),
+	})
 	if err != nil {
 		return err
 	}
@@ -359,7 +393,7 @@ func (d *Domain) Lookup(req *ahttp.Request) (*Route, *PathParams, bool) {
 	}
 
 	// get route tree for request method
-	tree, found := d.trees[req.Method]
+	tree, found := d.lookupRouteTree(req)
 	if !found {
 		return nil, nil, false
 	}
@@ -563,18 +597,41 @@ func (d *Domain) key() string {
 	return strings.ToLower(d.Host + ":" + d.Port)
 }
 
+func (d *Domain) lookupRouteTree(req *ahttp.Request) (*node, bool) {
+	// get route tree for request method
+	if tree, found := d.trees[req.Method]; found {
+		return tree, true
+	}
+
+	// get route tree for CORS access control method
+	if req.Method == ahttp.MethodOptions && d.CORSEnabled {
+		if tree, found := d.trees[req.Header.Get(ahttp.HeaderAccessControlRequestMethod)]; found {
+			return tree, true
+		}
+	}
+
+	return nil, false
+}
+
 //‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
 // Route methods
 //___________________________________
 
 // IsDir method returns true if serving directory otherwise false.
 func (r *Route) IsDir() bool {
-	return !ess.IsStrEmpty(r.Dir)
+	return !ess.IsStrEmpty(r.Dir) && ess.IsStrEmpty(r.File)
 }
 
 // IsFile method returns true if serving single file otherwise false.
 func (r *Route) IsFile() bool {
 	return !ess.IsStrEmpty(r.File)
+}
+
+// ValidationRule methdo returns `validation rule, true` if exists for path param
+// otherwise `"", false`
+func (r *Route) ValidationRule(name string) (string, bool) {
+	rules, found := r.validationRules[name]
+	return rules, found
 }
 
 //‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
@@ -601,15 +658,6 @@ func (pp PathParams) Len() int {
 // Unexported methods
 //___________________________________
 
-func suffixCommaValue(s, v string) string {
-	if ess.IsStrEmpty(s) {
-		s = v
-	} else {
-		s += ", " + v
-	}
-	return s
-}
-
 func addRegisteredAction(methods map[string]map[string]uint8, route *Route) {
 	if controller, found := methods[route.Controller]; found {
 		controller[route.Action] = 1
@@ -622,23 +670,48 @@ func parseRoutesSection(cfg *config.Config, routeInfo *parentRouteInfo) (routes 
 	for _, routeName := range cfg.Keys() {
 		// getting 'path'
 		routePath, found := cfg.String(routeName + ".path")
-		if !found {
+		if !found && ess.IsStrEmpty(routeInfo.PrefixPath) {
 			err = fmt.Errorf("'%v.path' key is missing", routeName)
 			return
 		}
 
 		// path must begin with '/'
-		if routePath[0] != slashByte {
+		if !ess.IsStrEmpty(routePath) && routePath[0] != slashByte {
 			err = fmt.Errorf("'%v.path' [%v], path must begin with '/'", routeName, routePath)
 			return
 		}
 
 		routePath = path.Join(routeInfo.PrefixPath, routePath)
 
+		// Split validation rules from path params
+		pathParamRules := make(map[string]string)
+		actualRoutePath := "/"
+		for _, seg := range strings.Split(routePath, "/")[1:] {
+			if len(seg) == 0 {
+				continue
+			}
+
+			if seg[0] == paramByte || seg[0] == wildByte {
+				param, rules, exists, valid := checkValidationRule(seg)
+				if exists {
+					if valid {
+						pathParamRules[param[1:]] = rules
+					} else {
+						err = fmt.Errorf("'%v.path' has invalid validation rule '%v'", routeName, routePath)
+						return
+					}
+				}
+
+				actualRoutePath = path.Join(actualRoutePath, param)
+			} else {
+				actualRoutePath = path.Join(actualRoutePath, seg)
+			}
+		}
+
 		// check child routes exists
 		notToSkip := true
 		if cfg.IsExists(routeName + ".routes") {
-			if !cfg.IsExists(routeName + ".controller") {
+			if !cfg.IsExists(routeName+".action") || !cfg.IsExists(routeName+".controller") {
 				notToSkip = false
 			}
 		}
@@ -647,8 +720,8 @@ func parseRoutesSection(cfg *config.Config, routeInfo *parentRouteInfo) (routes 
 		routeMethod := strings.ToUpper(cfg.StringDefault(routeName+".method", ahttp.MethodGet))
 
 		// getting 'controller'
-		routeController, found := cfg.String(routeName + ".controller")
-		if !found && notToSkip {
+		routeController := cfg.StringDefault(routeName+".controller", routeInfo.Controller)
+		if ess.IsStrEmpty(routeController) && notToSkip {
 			err = fmt.Errorf("'%v.controller' key is missing", routeName)
 			return
 		}
@@ -674,11 +747,23 @@ func parseRoutesSection(cfg *config.Config, routeInfo *parentRouteInfo) (routes 
 		// getting Anti-CSRF check value, GitHub go-aah/aah#115
 		routeAntiCSRFCheck := cfg.BoolDefault(routeName+".anti_csrf_check", true)
 
+		// CORS
+		var cors *CORS
+		if routeInfo.CORSEnabled {
+			if corsCfg, found := cfg.GetSubConfig(routeName + ".cors"); found {
+				if corsCfg.BoolDefault("enable", true) {
+					cors = processCORSSection(corsCfg, routeInfo.CORS)
+				}
+			} else {
+				cors = routeInfo.CORS
+			}
+		}
+
 		if notToSkip {
 			for _, m := range strings.Split(routeMethod, ",") {
 				routes = append(routes, &Route{
 					Name:            routeName,
-					Path:            routePath,
+					Path:            actualRoutePath,
 					Method:          strings.TrimSpace(m),
 					Controller:      routeController,
 					Action:          routeAction,
@@ -686,6 +771,8 @@ func parseRoutesSection(cfg *config.Config, routeInfo *parentRouteInfo) (routes 
 					Auth:            routeAuth,
 					MaxBodySize:     routeMaxBodySize,
 					IsAntiCSRFCheck: routeAntiCSRFCheck,
+					CORS:            cors,
+					validationRules: pathParamRules,
 				})
 			}
 		}
@@ -693,9 +780,12 @@ func parseRoutesSection(cfg *config.Config, routeInfo *parentRouteInfo) (routes 
 		// loading child routes
 		if childRoutes, found := cfg.GetSubConfig(routeName + ".routes"); found {
 			croutes, er := parseRoutesSection(childRoutes, &parentRouteInfo{
-				ParentName: routeName,
-				PrefixPath: routePath,
-				Auth:       routeAuth,
+				ParentName:  routeName,
+				PrefixPath:  routePath,
+				Controller:  routeController,
+				Auth:        routeAuth,
+				CORS:        cors,
+				CORSEnabled: routeInfo.CORSEnabled,
 			})
 			if er != nil {
 				err = er
@@ -749,6 +839,23 @@ func parseStaticSection(cfg *config.Config) (routes []*Route, err error) {
 			route.Path = path.Join(route.Path, "*filepath")
 		}
 
+		if fileFound {
+			// GitHub #141 - for a file mapping
+			//  - 'base_dir' attribute value is not provided and
+			//  - file 'path' value relative path
+			// then use 'public_assets.dir' as a default value.
+			if dir, found := cfg.String(routeName + ".base_dir"); found {
+				routeDir = dir
+			} else if routeFile[0] != slashByte { // relative file path mapping
+				if dir, found := cfg.String("public_assets.dir"); found {
+					routeDir = dir
+				} else {
+					err = fmt.Errorf("'static.%v.base_dir' value is missing", routeName)
+					return
+				}
+			}
+		}
+
 		route.Dir = routeDir
 		route.File = routeFile
 		route.ListDir = cfg.BoolDefault(routeName+".list", false)
@@ -757,11 +864,4 @@ func parseStaticSection(cfg *config.Config) (routes []*Route, err error) {
 	}
 
 	return
-}
-
-func findActionByHTTPMethod(method string) string {
-	if action, found := HTTPMethodActionMap[method]; found {
-		return action
-	}
-	return ""
 }
