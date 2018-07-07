@@ -5,11 +5,9 @@
 package router
 
 import (
-	"os"
-	"path/filepath"
+	"io/ioutil"
 	"testing"
 
-	"aahframework.org/config.v0"
 	"aahframework.org/essentials.v0"
 	"aahframework.org/log.v0"
 	"aahframework.org/test.v0/assert"
@@ -17,10 +15,8 @@ import (
 
 func TestRouterCORS1(t *testing.T) {
 	_ = log.SetLevel("TRACE")
-	wd, _ := os.Getwd()
-	appCfg, _ := config.ParseString("")
-	router := New(filepath.Join(wd, "testdata", "routes-cors-1.conf"), appCfg)
-	err := router.Load()
+	log.SetWriter(ioutil.Discard)
+	router, err := createRouter("routes-cors-1.conf")
 	assert.FailNowOnError(t, err, "")
 
 	domain := router.Domains["localhost:8080"]
@@ -32,7 +28,7 @@ func TestRouterCORS1(t *testing.T) {
 
 	routes := router.Domains["localhost:8080"].routes
 	assert.NotNil(t, routes)
-	assert.Equal(t, 7, len(routes))
+	assert.Equal(t, 8, len(routes))
 
 	getUserRoute := routes["get_user"]
 	assert.NotNil(t, getUserRoute.CORS)
@@ -53,10 +49,8 @@ func TestRouterCORS1(t *testing.T) {
 
 func TestRouterCORS2(t *testing.T) {
 	_ = log.SetLevel("TRACE")
-	wd, _ := os.Getwd()
-	appCfg, _ := config.ParseString("")
-	router := New(filepath.Join(wd, "testdata", "routes-cors-2.conf"), appCfg)
-	err := router.Load()
+	log.SetWriter(ioutil.Discard)
+	router, err := createRouter("routes-cors-2.conf")
 	assert.FailNowOnError(t, err, "")
 
 	domain := router.Domains["localhost:8080"]
@@ -69,7 +63,7 @@ func TestRouterCORS2(t *testing.T) {
 
 	routes := router.Domains["localhost:8080"].routes
 	assert.NotNil(t, routes)
-	assert.Equal(t, 7, len(routes))
+	assert.Equal(t, 8, len(routes))
 
 	getUserRoute := routes["get_user"]
 	assert.NotNil(t, getUserRoute.CORS)

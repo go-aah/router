@@ -37,23 +37,27 @@ var (
 	defaultAllowMethods = []string{ahttp.MethodGet, ahttp.MethodHead, ahttp.MethodPost}
 )
 
-// CORS struct is to hold Cross-Origin Resource Sharing (CORS) configuration
-// values and verification for the route.
+//‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
+// CORS
+//______________________________________________________________________________
+
+// CORS struct holds Cross-Origin Resource Sharing (CORS) configuration
+// values and verification methods for the route.
 //
-// Specification: https://www.w3.org/TR/cors/
+// Spec: https://www.w3.org/TR/cors/
 // Friendly Read: https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS
 type CORS struct {
-	AllowOrigins     []string
-	AllowMethods     []string
-	AllowHeaders     []string
-	ExposeHeaders    []string
 	AllowCredentials bool
-	MaxAge           string
+	allowAllOrigins  bool
+	allowAllMethods  bool
+	allowAllHeaders  bool
 
-	maxAgeStr       string
-	allowAllOrigins bool
-	allowAllMethods bool
-	allowAllHeaders bool
+	MaxAge        string
+	maxAgeStr     string
+	AllowOrigins  []string
+	AllowMethods  []string
+	AllowHeaders  []string
+	ExposeHeaders []string
 }
 
 // AddOrigins method adds the given origin into allow origin list.
@@ -166,24 +170,25 @@ func (c *CORS) IsHeadersAllowed(hdrs string) bool {
 }
 
 // String method returns string representation of CORS configuration values.
-func (c *CORS) String() string {
-	var buf bytes.Buffer
-	buf.WriteString("Allow Origins: ")
-	buf.WriteString(strings.Join(c.AllowOrigins, ", "))
-	buf.WriteString("\nAllow Headers: ")
-	buf.WriteString(strings.Join(c.AllowHeaders, ", "))
-	buf.WriteString("\nAllow Methods: ")
-	buf.WriteString(strings.Join(c.AllowMethods, ", "))
-	buf.WriteString("\nExpose Headers: ")
-	buf.WriteString(strings.Join(c.ExposeHeaders, ", "))
-	buf.WriteString(fmt.Sprintf("\nAllow Credentials: %v", c.AllowCredentials))
-	buf.WriteString(fmt.Sprintf("\nMax Age: %v", c.maxAgeStr))
+func (c CORS) String() string {
+	buf := new(bytes.Buffer)
+	buf.WriteString("cors(allow-origins:")
+	buf.WriteString(strings.Join(c.AllowOrigins, ","))
+	buf.WriteString(" allow-headers:")
+	buf.WriteString(strings.Join(c.AllowHeaders, ","))
+	buf.WriteString(" allow-methods:")
+	buf.WriteString(strings.Join(c.AllowMethods, ","))
+	buf.WriteString(" expose-headers:")
+	buf.WriteString(strings.Join(c.ExposeHeaders, ","))
+	buf.WriteString(fmt.Sprintf(" allow-credentials:%v", c.AllowCredentials))
+	buf.WriteString(fmt.Sprintf(" max-age:%s", c.maxAgeStr))
+	buf.WriteByte(')')
 	return buf.String()
 }
 
-//‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
+//‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
 // Unexported CORS methods
-//___________________________________
+//______________________________________________________________________________
 
 func (c *CORS) addHeaders(dst []string, src []string) []string {
 	for _, h := range src {
