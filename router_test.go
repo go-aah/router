@@ -1,5 +1,5 @@
 // Copyright (c) Jeevanandam M. (https://github.com/jeevatkm)
-// go-aah/router source code and usage is governed by a MIT style
+// aahframework.org/router source code and usage is governed by a MIT style
 // license that can be found in the LICENSE file.
 
 package router
@@ -60,13 +60,6 @@ func TestRouterLoadConfiguration(t *testing.T) {
 	assert.False(t, rts)
 	assert.Equal(t, 1, pathParam.Len())
 
-	// possible redirect trailing slash
-	reqCancelBooking2 := createHTTPRequest("localhost:8080", "/hotels/12345/cancel/")
-	reqCancelBooking2.Method = ahttp.MethodPost
-	domain = router.Lookup(reqCancelBooking2.Host)
-	_, _, rts = domain.Lookup(reqCancelBooking2)
-	assert.True(t, rts)
-
 	// Lookup by name
 	cancelBooking := domain.LookupByName("cancel_booking")
 	assert.Equal(t, "hotels_group", cancelBooking.ParentName)
@@ -86,10 +79,10 @@ func TestRouterLoadConfiguration(t *testing.T) {
 
 	err = domain.AddRoute(&Route{
 		Name:   "ErrorRoute",
-		Path:   "/:user/test",
+		Path:   "/hotels/:user/test",
 		Method: "GET",
 	})
-	assert.True(t, strings.HasPrefix(err.Error(), "wildcard route ':user' conflicts"))
+	assert.Equal(t, errors.New("aah/router: parameter based edge already exists[/hotels/:id...] new[/hotels/:user...]"), err)
 
 	domain.Port = ""
 	domain.inferKey()
@@ -162,7 +155,7 @@ func TestRouterStaticLoadConfiguration(t *testing.T) {
 	assert.False(t, rts)
 	assert.True(t, route.IsStatic)
 	assert.Equal(t, "/public", route.Dir)
-	assert.Equal(t, "/img/aahframework.png", pathParam.Get("filepath"))
+	assert.Equal(t, "img/aahframework.png", pathParam.Get("filepath"))
 	assert.Equal(t, "", route.File)
 	assert.True(t, route.IsDir())
 	assert.False(t, route.IsFile())
@@ -361,7 +354,7 @@ func TestRouterDomainRouteURL(t *testing.T) {
 func TestRouterDomainAddRoute(t *testing.T) {
 	domain := &Domain{
 		Host:   "aahframework.org",
-		trees:  make(map[string]*node),
+		trees:  make(map[string]*tree),
 		routes: make(map[string]*Route),
 	}
 
@@ -393,7 +386,7 @@ func TestRouterDomainAddRoute(t *testing.T) {
 		Action: "Index",
 	}
 	err = domain.AddRoute(routeError)
-	assert.True(t, strings.Contains(err.Error(), "value is already registered"))
+	assert.Equal(t, errNodeExists, err)
 }
 
 func TestRouterConfigNotExists(t *testing.T) {

@@ -287,7 +287,7 @@ func (r *Router) processRoutesConfig() (err error) {
 			DefaultAuth:           domainCfg.StringDefault("default_auth", ""),
 			AntiCSRFEnabled:       domainCfg.BoolDefault("anti_csrf_check", true),
 			CORSEnabled:           domainCfg.BoolDefault("cors.enable", false),
-			trees:                 make(map[string]*node),
+			trees:                 make(map[string]*tree),
 			routes:                make(map[string]*Route),
 		}
 
@@ -333,6 +333,9 @@ func (r *Router) processRoutesConfig() (err error) {
 		}
 
 		r.Domains[idx] = domain
+		for _, t := range domain.trees {
+			t.root.inferwnode()
+		}
 	} // End of domains
 
 	// find out root domain
