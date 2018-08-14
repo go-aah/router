@@ -57,10 +57,11 @@ func (d *Domain) Lookup(req *http.Request) (*Route, ahttp.PathParams, bool) {
 		// get route tree for CORS access control method
 		if req.Method == ahttp.MethodOptions && d.CORSEnabled {
 			if h := req.Header[ahttp.HeaderAccessControlRequestMethod]; len(h) > 0 {
-				if tree, found = d.trees[h[0]]; !found {
-					return nil, nil, false
-				}
+				tree, found = d.trees[h[0]]
 			}
+		}
+		if !found {
+			return nil, nil, false
 		}
 	}
 
