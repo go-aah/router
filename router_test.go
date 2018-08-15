@@ -58,7 +58,7 @@ func TestRouterLoadConfiguration(t *testing.T) {
 	assert.Equal(t, "cancel_booking", route.Name)
 	assert.Equal(t, "12345", pathParam.Get("id"))
 	assert.False(t, rts)
-	assert.Equal(t, 1, pathParam.Len())
+	assert.Equal(t, 1, len(pathParam))
 
 	// Lookup by name
 	cancelBooking := domain.LookupByName("cancel_booking")
@@ -159,6 +159,22 @@ func TestRouterStaticLoadConfiguration(t *testing.T) {
 	assert.Equal(t, "", route.File)
 	assert.True(t, route.IsDir())
 	assert.False(t, route.IsFile())
+
+	// static
+	staticDirReq := createHTTPRequest("localhost:8080", "/static")
+	staticDirReq.Method = ahttp.MethodGet
+	route, params, rts := domain.Lookup(staticDirReq)
+	assert.True(t, rts)
+	assert.Nil(t, route)
+	assert.Nil(t, params)
+
+	notfoundMethod := createHTTPRequest("sample.localhost:8080", "/static")
+	notfoundMethod.Method = ahttp.MethodOptions
+	domain = router.Lookup(notfoundMethod.Host)
+	route, params, rts = domain.Lookup(notfoundMethod)
+	assert.False(t, rts)
+	assert.Nil(t, route)
+	assert.Nil(t, params)
 }
 
 func TestRouterErrorLoadConfiguration(t *testing.T) {
@@ -597,6 +613,8 @@ func TestMiscRouter(t *testing.T) {
 	r = New("configPath", nil)
 	assert.NotNil(t, r)
 	assert.Nil(t, r.config)
+
+	addSlashPrefix("welcome")
 }
 
 type app struct {

@@ -43,7 +43,7 @@ type Domain struct {
 // Lookup method looks up route if found it returns route, path parameters,
 // redirect trailing slash indicator for given `ahttp.Request` by domain
 // and request URI otherwise returns nil and false.
-func (d *Domain) Lookup(req *http.Request) (*Route, ahttp.PathParams, bool) {
+func (d *Domain) Lookup(req *http.Request) (*Route, ahttp.URLParams, bool) {
 	// HTTP method override support
 	if req.Method == ahttp.MethodPost {
 		if h := req.Header[ahttp.HeaderXHTTPMethodOverride]; len(h) > 0 {
@@ -65,8 +65,7 @@ func (d *Domain) Lookup(req *http.Request) (*Route, ahttp.PathParams, bool) {
 		}
 	}
 
-	route, pathParams := tree.lookup(req.URL.Path)
-	return route, pathParams, false
+	return tree.lookup(req.URL.Path)
 }
 
 // LookupByName method returns the route for given route name otherwise nil.
@@ -101,22 +100,19 @@ func (d *Domain) AddRoute(route *Route) error {
 func (d *Domain) Allowed(requestMethod, path string) (allowed string) {
 	if path == "*" { // server-wide
 		for method := range d.trees {
-			if method == ahttp.MethodOptions {
-				continue
+			if method != ahttp.MethodOptions {
+				// add request method to list of allowed methods
+				allowed = suffixCommaValue(allowed, method)
 			}
-
-			// add request method to list of allowed methods
-			allowed = suffixCommaValue(allowed, method)
 		}
-	} else { // specific path
-		for method := range d.trees {
-			// Skip the requested method - we already tried this one
-			if method == requestMethod || method == ahttp.MethodOptions {
-				continue
-			}
+		return
+	}
 
-			value, _ := d.trees[method].lookup(path)
-			if value != nil {
+	// specific path
+	for method := range d.trees {
+		// Skip the requested method - we already tried this one
+		if method != requestMethod && method != ahttp.MethodOptions {
+			if value, _, _ := d.trees[method].lookup(path); value != nil {
 				// add request method to list of allowed methods
 				allowed = suffixCommaValue(allowed, method)
 			}

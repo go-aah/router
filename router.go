@@ -647,6 +647,13 @@ func parseStaticSection(cfg *config.Config) (routes []*Route, err error) {
 		route.File = routeFile
 		route.ListDir = cfg.BoolDefault(routeName+".list", false)
 
+		// add route if directory found and list dir is enabled
+		if route.ListDir && dirFound {
+			rt := *route
+			rt.Path = path.Clean(routePath) + "/"
+			routes = append(routes, &rt)
+		}
+
 		routes = append(routes, route)
 	}
 

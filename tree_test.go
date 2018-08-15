@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"aahframework.org/ahttp.v0"
@@ -42,7 +43,7 @@ func TestTreeBasicUseCase(t *testing.T) {
 	tt.root.inferwnode()
 
 	for _, tc := range testcases {
-		v, p := tt.lookup(tc.route)
+		v, p, _ := tt.lookup(tc.route)
 		assert.Nil(t, p)
 		assert.NotNil(t, v)
 		assert.Equal(t, tc.result, v)
@@ -87,76 +88,88 @@ func TestTreeRouteParameters(t *testing.T) {
 	testcases := []struct {
 		route        string
 		result       *Route
-		resultParams ahttp.PathParams
+		resultParams ahttp.URLParams
 	}{
 		{route: "/doc/go1.html", result: &Route{Path: "/doc/go1.html"}},
 		{route: "/cmd/aahcli"},
+		{route: "/search/someth!ng+in+ünìcodé/"},
 		{
 			route:        "/info/:JeevaM/project/*aahframework",
 			result:       &Route{Path: "/info/:user/project/:project"},
-			resultParams: ahttp.PathParams{"user": ":JeevaM", "project": "*aahframework"},
+			resultParams: ahttp.URLParams{{Key: "user", Value: ":JeevaM"}, {Key: "project", Value: "*aahframework"}},
 		},
 		{
 			route:        "/cmd/supertool/aah",
 			result:       &Route{Path: "/cmd/:tool/:sub"},
-			resultParams: ahttp.PathParams{"tool": "supertool", "sub": "aah"},
+			resultParams: ahttp.URLParams{{Key: "tool", Value: "supertool"}, {Key: "sub", Value: "aah"}},
 		},
 		{
 			route:        "/files/jeeva/path/to/jeeva/file",
 			result:       &Route{Path: "/files/:dir/*filepath"},
-			resultParams: ahttp.PathParams{"filepath": "path/to/jeeva/file", "dir": "jeeva"},
+			resultParams: ahttp.URLParams{{Key: "dir", Value: "jeeva"}, {Key: "filepath", Value: "path/to/jeeva/file"}},
 		},
 		{
 			route:        "/user_welcome2/about",
 			result:       &Route{Path: "/user_:name/about"},
-			resultParams: ahttp.PathParams{"name": "welcome2"},
+			resultParams: ahttp.URLParams{{Key: "name", Value: "welcome2"}},
 		},
 		{
 			route:        "/cmd/aahcli/",
 			result:       &Route{Path: "/cmd/:tool/"},
-			resultParams: ahttp.PathParams{"tool": "aahcli"},
+			resultParams: ahttp.URLParams{{Key: "tool", Value: "aahcli"}},
 		},
 		{
 			route:        "/search/someth!ng+in+ünìcodé",
 			result:       &Route{Path: "/search/:query"},
-			resultParams: ahttp.PathParams{"query": "someth!ng+in+ünìcodé"},
+			resultParams: ahttp.URLParams{{Key: "query", Value: "someth!ng+in+ünìcodé"}},
 		},
 		{
 			route:        "/files/js/inc/framework.js",
 			result:       &Route{Path: "/files/:dir/*filepath"},
-			resultParams: ahttp.PathParams{"dir": "js", "filepath": "inc/framework.js"},
+			resultParams: ahttp.URLParams{{Key: "dir", Value: "js"}, {Key: "filepath", Value: "inc/framework.js"}},
 		},
 		{
 			route:        "/info/gordon/public",
 			result:       &Route{Path: "/info/:user/public"},
-			resultParams: ahttp.PathParams{"user": "gordon"},
+			resultParams: ahttp.URLParams{{Key: "user", Value: "gordon"}},
 		},
 		{
 			route:        "/info/gordon/project/go",
 			result:       &Route{Path: "/info/:user/project/:project"},
-			resultParams: ahttp.PathParams{"user": "gordon", "project": "go"},
+			resultParams: ahttp.URLParams{{Key: "user", Value: "gordon"}, {Key: "project", Value: "go"}},
 		},
 		{
 			route:        "/src/path/to/source/file.go",
 			result:       &Route{Path: "/src/*filepath"},
-			resultParams: ahttp.PathParams{"filepath": "path/to/source/file.go"},
+			resultParams: ahttp.URLParams{{Key: "filepath", Value: "path/to/source/file.go"}},
 		},
 	}
 
 	for _, tc := range testcases {
-		v, p := tt.lookup(tc.route)
+		v, p, _ := tt.lookup(tc.route)
 		assert.Equal(t, tc.result, v)
 		assert.Equal(t, tc.resultParams, p)
 	}
 
-	// Enable traling slash
-	tt.tralingSlash = true
-	v, p := tt.lookup("/cmd/aahcli")
-	assert.Equal(t, &Route{Path: "/cmd/:tool/"}, v)
-	assert.Equal(t, ahttp.PathParams{"tool": "aahcli"}, p)
-
 	var buf bytes.Buffer
 	tt.root.printTree(&buf, 0)
+
+	// Enable trailing slash
+	tt.tralingSlash = true
+	trailingRoutes := []string{
+		"/cmd/aahcli",
+		"/search",
+		"/doc",
+		"/cmd/welcome/trail2/",
+		"/files/js/",
+	}
+	for _, route := range trailingRoutes {
+		v, p, rts := tt.lookup(route)
+		assert.Nil(t, v)
+		assert.Nil(t, p)
+		assert.True(t, rts)
+	}
+
 }
 
 func TestTreePyramidHierarchyURL(t *testing.T) {
@@ -188,62 +201,62 @@ func TestTreePyramidHierarchyURL(t *testing.T) {
 	testcases := []struct {
 		route        string
 		result       *Route
-		resultParams ahttp.PathParams
+		resultParams ahttp.URLParams
 	}{
 		{route: "/country", result: &Route{Path: "/country"}},
 		{route: "/country/create", result: &Route{Path: "/country/create"}},
 		{
 			route:        "/country/USA",
 			result:       &Route{Path: "/country/:country_id"},
-			resultParams: ahttp.PathParams{"country_id": "USA"},
+			resultParams: ahttp.URLParams{{Key: "country_id", Value: "USA"}},
 		},
 		{
 			route:        "/country/India",
 			result:       &Route{Path: "/country/:country_id"},
-			resultParams: ahttp.PathParams{"country_id": "India"},
+			resultParams: ahttp.URLParams{{Key: "country_id", Value: "India"}},
 		},
 		{
 			route:        "/country/India/edit",
 			result:       &Route{Path: "/country/:country_id/edit"},
-			resultParams: ahttp.PathParams{"country_id": "India"},
+			resultParams: ahttp.URLParams{{Key: "country_id", Value: "India"}},
 		},
 		{
 			route:        "/country/India/city/create",
 			result:       &Route{Path: "/country/:country_id/city/create"},
-			resultParams: ahttp.PathParams{"country_id": "India"},
+			resultParams: ahttp.URLParams{{Key: "country_id", Value: "India"}},
 		},
 		{
 			route:        "/country/USA/city/3645363/district",
 			result:       &Route{Path: "/country/:country_id/city/:city_id/district"},
-			resultParams: ahttp.PathParams{"country_id": "USA", "city_id": "3645363"},
+			resultParams: ahttp.URLParams{{Key: "country_id", Value: "USA"}, {Key: "city_id", Value: "3645363"}},
 		},
 		{
 			route:        "/country/India/city/97634643/district",
 			result:       &Route{Path: "/country/:country_id/city/:city_id/district"},
-			resultParams: ahttp.PathParams{"country_id": "India", "city_id": "97634643"},
+			resultParams: ahttp.URLParams{{Key: "country_id", Value: "India"}, {Key: "city_id", Value: "97634643"}},
 		},
 		{
 			route:        "/country/USA/city/3645363/district/029832/edit",
 			result:       &Route{Path: "/country/:country_id/city/:city_id/district/:district_id/edit"},
-			resultParams: ahttp.PathParams{"country_id": "USA", "city_id": "3645363", "district_id": "029832"},
+			resultParams: ahttp.URLParams{{Key: "country_id", Value: "USA"}, {Key: "city_id", Value: "3645363"}, {Key: "district_id", Value: "029832"}},
 		},
 	}
 
 	for _, tc := range testcases {
-		v, p := tt.lookup(tc.route)
+		v, p, _ := tt.lookup(tc.route)
 		assert.Equal(t, tc.result, v)
 		assert.Equal(t, tc.resultParams, p)
 	}
 
 	// Enable traling slash
 	tt.tralingSlash = true
-	v, p := tt.lookup("/country/create/")
+	v, p, _ := tt.lookup("/country/create/")
 	assert.Equal(t, &Route{Path: "/country/create/"}, v)
 	assert.Nil(t, p)
 
-	v, p = tt.lookup("/country/USA/city/3645363/")
+	v, p, _ = tt.lookup("/country/USA/city/3645363/")
 	assert.Equal(t, &Route{Path: "/country/:country_id/city/:city_id/"}, v)
-	assert.Equal(t, ahttp.PathParams{"country_id": "USA", "city_id": "3645363"}, p)
+	assert.Equal(t, ahttp.URLParams{{Key: "country_id", Value: "USA"}, {Key: "city_id", Value: "3645363"}}, p)
 
 	var buf bytes.Buffer
 	tt.root.printTree(&buf, 0)
@@ -306,6 +319,49 @@ func TestTreeRoutesAddErrors(t *testing.T) {
 	assert.Equal(t, errors.New("aah/router: parameter based edge already exists[/*filepath...] new[/:id...]"), err)
 }
 
+func TestTreeWildcardRoutes(t *testing.T) {
+	routes := []string{
+		"/static/*filepath",
+		"/",
+		"/hotels",
+		"/hotels/:id",
+		"/hotels/:id/booking",
+		"/favicon.ico",
+		"/settings",
+		"/logout",
+		"/register",
+		"/static",
+	}
+
+	tt := newTree()
+	tt.tralingSlash = true
+	for _, route := range routes {
+		err := tt.add(route, &Route{Path: route})
+		assert.FailOnError(t, err, "unexpected")
+	}
+
+	tt.root.inferwnode()
+
+	searchRoutes := []string{
+		"/",
+		"/hotels/12345/booking",
+		"/favicon.ico",
+		"/static/img/aahframework.png",
+		"/static",
+		"/static/",
+	}
+
+	for _, r := range searchRoutes {
+		v, p, rts := tt.lookup(r)
+		if rts {
+			assert.Nil(t, v)
+			assert.Nil(t, p)
+		} else {
+			assert.NotNil(t, v)
+		}
+	}
+}
+
 func TestTreeRouteNotFound(t *testing.T) {
 	routes := []string{
 		"/country/:country_id/city/:city_id/district/:district_id/edit",
@@ -339,7 +395,7 @@ func TestTreeRouteNotFound(t *testing.T) {
 	}
 
 	for _, r := range searchRoutes {
-		v, p := tt.lookup(r)
+		v, p, _ := tt.lookup(r)
 		assert.Nil(t, v)
 		assert.Nil(t, p)
 	}
@@ -372,7 +428,7 @@ func TestTreeVariousRouteTypes(t *testing.T) {
 	testcases := []struct {
 		route        string
 		result       *Route
-		resultParams ahttp.PathParams
+		resultParams ahttp.URLParams
 	}{
 		{route: "/cmd/vet", result: &Route{Path: "/cmd/vet"}},
 		{route: "/search/invalid", result: &Route{Path: "/search/invalid"}},
@@ -380,17 +436,17 @@ func TestTreeVariousRouteTypes(t *testing.T) {
 		{
 			route:        "/id2837463463",
 			result:       &Route{Path: "/id:id"},
-			resultParams: ahttp.PathParams{"id": "2837463463"},
+			resultParams: ahttp.URLParams{{Key: "id", Value: "2837463463"}},
 		},
 		{
 			route:        "/src2/welcometojungle",
 			result:       &Route{Path: "/src2*filepath"},
-			resultParams: ahttp.PathParams{"filepath": "/welcometojungle"},
+			resultParams: ahttp.URLParams{{Key: "filepath", Value: "/welcometojungle"}},
 		},
 	}
 
 	for _, tc := range testcases {
-		v, p := tt.lookup(tc.route)
+		v, p, _ := tt.lookup(tc.route)
 		assert.Equal(t, tc.result, v)
 		assert.Equal(t, tc.resultParams, p)
 	}
@@ -482,10 +538,19 @@ func TestTreeCasesentiveCheck(t *testing.T) {
 
 		tt.root.inferwnode()
 
-		v, p := tt.lookup(tc.search)
+		v, p, _ := tt.lookup(tc.search)
 		assert.NotNil(t, v)
 		assert.Nil(t, p)
 		assert.Equal(t, tc.route, v.Path)
+	}
+}
+
+func TestCountParams(t *testing.T) {
+	if countParams("/path/:param1/static/*catch-all") != 2 {
+		t.Fail()
+	}
+	if countParams(strings.Repeat("/:param", 256)) != 255 {
+		t.Fail()
 	}
 }
 

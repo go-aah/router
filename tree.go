@@ -38,21 +38,22 @@ const (
 //______________________________________________________________________________
 
 type tree struct {
-	root         *node
 	tralingSlash bool
+	maxParams    uint8
+	root         *node
 }
 
-func (t *tree) lookup(p string) (r *Route, params ahttp.PathParams) {
-	s, l, sn := strings.ToLower(p), len(p), t.root
+func (t *tree) lookup(p string) (r *Route, params ahttp.URLParams, rts bool) {
+	s, l, sn, pn := strings.ToLower(p), len(p), t.root, t.root
 	ll := l
 walk:
 	for {
 		if sn == nil {
-			return nil, nil
+			r, params = nil, nil
+			return
 		}
 		i := 0
-		switch sn.typ {
-		case staticNode:
+		if sn.typ == staticNode {
 			max := len(sn.label)
 			if ll <= max {
 				max = ll
@@ -61,44 +62,66 @@ walk:
 				i++
 			}
 			if i != max {
-				return nil, nil
+				r, params = nil, nil
+				return
 			}
-		case paramNode:
+		} else if sn.typ == paramNode {
 			for i < ll && s[i] != slashByte {
 				i++
 			}
 			if params == nil {
-				params = ahttp.PathParams{}
+				params = make(ahttp.URLParams, 0, t.maxParams)
 			}
-			params[sn.arg] = p[:i]
-		case wildcardNode:
+			j := len(params)
+			params = params[:j+1]
+			params[j].Key = sn.arg
+			params[j].Value = p[:i]
+		} else if sn.typ == wildcardNode {
 			if params == nil {
-				params = ahttp.PathParams{}
+				params = make(ahttp.URLParams, 0, t.maxParams)
 			}
-			params[sn.arg] = p[i:]
+			j := len(params)
+			params = params[:j+1]
+			params[j].Key = sn.arg
+			params[j].Value = p[i:]
 			r = sn.value
 			return
 		}
-
 		s, p = s[i:], p[i:]
 		ll = len(s)
 		if ll == 0 {
-			if sn.value == nil && t.tralingSlash {
-				sn = sn.findByIdx(slashByte)
+			if (i < len(sn.label) || sn.value == nil) && t.tralingSlash {
+				if sn.label[len(sn.label)-1] == slashByte && sn.value != nil {
+					r, params, rts = nil, nil, true
+				} else if sn = sn.findByIdx(slashByte); sn != nil && sn.value != nil {
+					r, params, rts = nil, nil, true
+				} else if pn.value != nil {
+					r, params, rts = nil, nil, true
+				}
+				return
+			} else if sn.value != nil { // edge found
+				r = sn.value
+				return
 			}
-			if sn == nil || sn.value == nil {
-				return nil, nil
+			params = nil
+			return
+		} else if ll == 1 && s == SlashString && len(sn.edges) == 0 {
+			if sn.value != nil {
+				r, params, rts = nil, nil, true
+				return
 			}
-			r = sn.value
+			r, params = nil, nil
 			return
 		}
 
 		for _, e := range sn.edges {
 			if e.idx == s[0] && e.typ == staticNode {
+				pn = sn
 				sn = e
 				continue walk
 			}
 		}
+		pn = sn
 		sn = sn.wnode
 	}
 }
@@ -107,6 +130,10 @@ func (t *tree) add(p string, r *Route) error {
 	fullPath := p
 	p = strings.ToLower(p)
 	var err error
+	maxParams := countParams(p)
+	if maxParams > t.maxParams {
+		t.maxParams = maxParams
+	}
 	for i, l := 0, len(p); i < l; i++ {
 		switch p[i] {
 		case paramByte:
@@ -317,10 +344,10 @@ func checkParameter(p, arg string) error {
 	return nil
 }
 
-func countParams(path string) uint8 {
+func countParams(p string) uint8 {
 	var n uint
-	for i := 0; i < len(path); i++ {
-		if path[i] != paramByte && path[i] != wildByte {
+	for i := 0; i < len(p); i++ {
+		if p[i] != paramByte && p[i] != wildByte {
 			continue
 		}
 		n++
